@@ -1,8 +1,5 @@
 using InventorySystem.Application.Features.RabbitMQProducer.Interfaces;
 using Microsoft.Extensions.Logging;
-using Polly;
-using Polly.CircuitBreaker;
-using Polly.Retry;
 using RabbitMQ.Client;
 using System;
 using System.Collections.Generic;
@@ -22,41 +19,21 @@ namespace InventorySystem.Application.Features.RabbitMQProducer
 
         private static readonly List<string> QUEUES = new List<string> { "inventory.create", "inventory.update", "inventory.delete" };
 
-        private static readonly AsyncCircuitBreakerPolicy _circuitBreaker = Policy
-            .Handle<Exception>() // Maneja cualquier excepción que ocurra.
-            .CircuitBreakerAsync(
-                exceptionsAllowedBeforeBreaking: 3, // Número de excepciones permitidas antes de abrir el circuito.
-                durationOfBreak: TimeSpan.FromMinutes(1), // Tiempo que el circuito permanecerá abierto antes de intentar restablecerse.
-                onBreak: (ex, breakDelay) =>
-                {
-                    // Log para indicar que el circuito se ha abierto debido a múltiples fallos.
-                },
-                onReset: () =>
-                {
-                    // Log para indicar que el circuito se ha restablecido y está listo para operar nuevamente.
-                },
-                onHalfOpen: () =>
-                {
-                    // Log para indicar que el circuito está en estado "half-open" y está probando si puede restablecerse.
-                }
-            );
+        private int _connectionFailureCount = 0;
 
-        private static readonly AsyncRetryPolicy _retryPolicy = Policy
-            .Handle<Exception>() // Maneja cualquier excepción que ocurra durante la operación.
-            .WaitAndRetryAsync(
-                retryCount: 3, // Número máximo de intentos de reintento.
-                sleepDurationProvider: attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)), // Tiempo de espera exponencial entre intentos.
-                onRetry: (exception, timeSpan, retryCount, context) =>
-                {
-                    // Log para registrar cada intento de reintento, incluyendo la excepción y el tiempo de espera.
-                }
-            );
+        public int ConnectionFailureCount => _connectionFailureCount;
 
         public RabbitMQProducer(string hostName, ILogger<RabbitMQProducer> logger)
         {
             _hostName = hostName;
             _logger = logger;
             InitializeConnectionAsync().GetAwaiter().GetResult();
+        }
+
+        public void IncrementConnectionFailureCount()
+        {
+            _connectionFailureCount++;
+            _logger.LogWarning("Failed to connect to RabbitMQ. Attempt count: {FailureCount}", _connectionFailureCount);
         }
 
         private async Task InitializeConnectionAsync()
@@ -85,9 +62,12 @@ namespace InventorySystem.Application.Features.RabbitMQProducer
                     var routingKey = queue.Split('.')[1];
                     await _channel.QueueBindAsync(queue, _exchangeName, routingKey);
                 }
+
+                _connectionFailureCount = 0; // Reset failure count on successful connection
             }
             catch (Exception ex)
             {
+                IncrementConnectionFailureCount();
                 _logger.LogError(ex, "Failed to initialize RabbitMQ connection");
                 throw;
             }
@@ -95,38 +75,27 @@ namespace InventorySystem.Application.Features.RabbitMQProducer
 
         public async Task PublishAsync<T>(T message, string routingKey)
         {
-            await Task.Run(async () =>
+            if (!IsConnectionOpen())
             {
-                ReconnectIfNeeded();
+                _logger.LogError("Cannot publish message. RabbitMQ connection is not open.");
+                return;
+            }
 
-                try
-                {
-                    var jsonMessage = JsonSerializer.Serialize(message);
-                    var body = Encoding.UTF8.GetBytes(jsonMessage);
-
-                    await _channel.BasicPublishAsync(
-                        exchange: _exchangeName,
-                        routingKey: routingKey,
-                        mandatory: true,
-                        body: body);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to publish message with routing key {RoutingKey}", routingKey);
-                    throw;
-                }
-            });
-        }
-
-        public async Task PublishWithRetryAsync<T>(T message, string routingKey, int maxRetries = 3)
-        {
-            await _circuitBreaker.ExecuteAsync(async () =>
+            try
             {
-                await _retryPolicy.ExecuteAsync(async () =>
-                {
-                    await PublishAsync(message, routingKey);
-                });
-            });
+                var jsonMessage = JsonSerializer.Serialize(message);
+                var body = Encoding.UTF8.GetBytes(jsonMessage);
+
+                await _channel.BasicPublishAsync(
+                    exchange: _exchangeName,
+                    routingKey: routingKey,
+                    mandatory: true,
+                    body: body);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to publish message with routing key {RoutingKey}", routingKey);
+            }
         }
 
         public bool IsConnectionOpen()

@@ -1,3 +1,10 @@
+# Desarrollador Backend .NET
+## Desafío Técnico
+### Sistema de Notificaciones de Inventario
+
+## Contexto
+Desarrollar un sistema simple para la gestión de actualizaciones de inventario entre dos microservicios, usando RabbitMQ como middleware de mensajería.
+
 # Inventory System Solution
 
 ## Prerequisites

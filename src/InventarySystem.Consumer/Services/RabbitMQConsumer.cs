@@ -2,9 +2,6 @@
 using InventorySystem.Domain.Entities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Polly;
-using Polly.CircuitBreaker;
-using Polly.Retry;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
@@ -22,44 +19,15 @@ namespace InventorySystem.Consumer.Services
         private const string EXCHANGE_NAME = "inventory_exchange";
         private static readonly List<string> QUEUES = new List<string> { "inventory.create", "inventory.update", "inventory.delete" };
 
-        private static readonly AsyncCircuitBreakerPolicy _circuitBreaker = Policy
-            .Handle<Exception>()
-            .CircuitBreakerAsync(
-                exceptionsAllowedBeforeBreaking: 3,
-                durationOfBreak: TimeSpan.FromMinutes(1),
-                onBreak: (ex, breakDelay) =>
-                {
-                    // Log circuit breaker open
-                },
-                onReset: () =>
-                {
-                    // Log circuit breaker reset
-                },
-                onHalfOpen: () =>
-                {
-                    // Log circuit breaker half-open
-                });
-
-        private static readonly AsyncRetryPolicy _retryPolicy = Policy
-            .Handle<Exception>()
-            .WaitAndRetryAsync(
-                retryCount: 3,
-                sleepDurationProvider: attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)),
-                onRetry: (exception, timeSpan, retryCount, context) =>
-                {
-                    // Log retry attempt
-                });
-
         public RabbitMQConsumer(
             string hostName,
             ILogger<RabbitMQConsumer> logger,
-            IInventoryService inventoryService 
-
-            )
+            IInventoryService inventoryService
+        )
         {
             _hostName = hostName;
             _logger = logger;
-            _inventoryService = inventoryService; 
+            _inventoryService = inventoryService;
             InitializeConnectionAsync().GetAwaiter().GetResult();
         }
 
@@ -99,6 +67,27 @@ namespace InventorySystem.Consumer.Services
             }
         }
 
+        private async Task ProcessMessageAsync(string routingKey, string message)
+        {
+            try
+            {
+                var product = JsonSerializer.Deserialize<Product>(message);
+
+                var inventory = new Inventory
+                {
+                    ProductId = product.Id,
+                    Stock = product.Stock,
+                    MethodType = routingKey,
+                    CreationDate = DateTime.UtcNow
+                };
+                await _inventoryService.CreateAsync(inventory);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, $"Failed to deserialize message: {message}");
+            }
+        }
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             var consumer = new AsyncEventingBasicConsumer(_channel);
@@ -106,30 +95,11 @@ namespace InventorySystem.Consumer.Services
             {
                 var body = ea.Body.ToArray();
                 var message = Encoding.UTF8.GetString(body);
-                try
-                {
-                    var routingKey = ea.RoutingKey;
+                var routingKey = ea.RoutingKey;
 
-                    _logger.LogInformation($"Message received from {routingKey}: {message}");
+                _logger.LogInformation($"Message received from {routingKey}: {message}");
 
-                    var product = JsonSerializer.Deserialize<Product>(message);
-
-                    var inventory = new Inventory
-                    {
-                        ProductId = product.Id,
-                        Stock = product.Stock,
-                        MethodType = routingKey,
-                        CreationDate = DateTime.UtcNow
-                    };
-                    await _inventoryService.CreateAsync(inventory);
-
-                    await Task.CompletedTask;
-                }
-                catch (JsonException ex)
-                {
-                    _logger.LogError(ex, $"Failed to deserialize message: {message}");
-                    return;
-                }
+                await ProcessMessageAsync(routingKey, message);
             };
 
             foreach (var queue in QUEUES)
