@@ -13,3 +13,6 @@
 /src/InventorySystem.Domain/obj
 /src/InventorySystem.Infrastructure/bin/Debug/net8.0
 /src/InventorySystem.Infrastructure/obj
+/src/InventorySystem.Tests/bin/Debug/net8.0
+/src/InventorySystem.Tests/obj/Debug/net8.0
+/src/InventorySystem.Tests/obj
