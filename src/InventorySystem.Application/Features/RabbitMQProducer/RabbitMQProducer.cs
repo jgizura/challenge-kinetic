@@ -63,7 +63,7 @@ namespace InventorySystem.Application.Features.RabbitMQProducer
                     await _channel.QueueBindAsync(queue, _exchangeName, routingKey);
                 }
 
-                _connectionFailureCount = 0; // Reset failure count on successful connection
+                _connectionFailureCount = 0;
             }
             catch (Exception ex)
             {

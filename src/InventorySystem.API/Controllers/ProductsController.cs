@@ -72,7 +72,7 @@ namespace InventorySystem.API.Controllers
         /// Updates an existing product
         /// </summary>
         /// <param name="id">The ID of the product to update</param>
-        /// <param name="updateProductDto">The updated product information</param>
+        /// <param name="CreateProductDto">The updated product information</param>
         /// <returns>No content if successful</returns>
         /// <response code="204">If the product was updated successfully</response>
         /// <response code="400">If the ID in the URL doesn't match the body or data is invalid</response>

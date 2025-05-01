@@ -11,6 +11,12 @@ namespace InventorySystem.Application.Features.ResiliencePolicies
     {
         private static readonly ILogger _logger;
 
+        static ResiliencePolicies()
+        {
+            var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+            _logger = loggerFactory.CreateLogger("ResiliencePolicies");
+        }
+
         public static readonly AsyncCircuitBreakerPolicy CircuitBreakerPolicy = Policy
             .Handle<Exception>()
             .CircuitBreakerAsync(
@@ -34,47 +40,33 @@ namespace InventorySystem.Application.Features.ResiliencePolicies
             .WaitAndRetryAsync(
                 retryCount: 3,
                 sleepDurationProvider: attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)),
-                onRetry: async (exception, timeSpan, retryCount, context) =>
+                onRetry: async (exception, timeSpan, retryAttempt, context) =>
                 {
-                    Console.WriteLine($"Intento de reintento {retryCount} después de {timeSpan.TotalSeconds} segundos debido a: {exception.Message}");
+                    Console.WriteLine($"Reintento {retryAttempt} después de {timeSpan.TotalSeconds} segundos debido a: {exception.Message}");
 
-                    if (retryCount <= 3) // Solo intentar republicar dentro de los primeros 3 intentos
+                    if (retryAttempt < 3 && context.TryGetValue("RabbitMQProducer", out var producerObj) && producerObj is IRabbitMQProducer producer)
                     {
-                        if (context.TryGetValue("RabbitMQProducer", out var producerObj) && producerObj is IRabbitMQProducer producer)
+                        if (producer.IsConnectionOpen()) // Verificar si RabbitMQ está disponible
                         {
-                            if (producer.IsConnectionOpen()) // Verificar si RabbitMQ está disponible
+                            try
                             {
-                                try
-                                {
-                                    // Reintentar publicar el mensaje en RabbitMQ
-                                    var message = context["Message"];
-                                    var routingKey = context["RoutingKey"].ToString();
-                                    await producer.PublishAsync(message, routingKey);
-                                    Console.WriteLine("Mensaje republicado exitosamente en RabbitMQ.");
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine($"Error al republicar en RabbitMQ: {ex.Message}");
-                                }
+                                // Reintentar publicar el mensaje en RabbitMQ
+                                var message = context["Message"];
+                                var routingKey = context["RoutingKey"].ToString();
+                                await producer.PublishAsync(message, routingKey);
+                                Console.WriteLine("Mensaje republicado exitosamente en RabbitMQ.");
                             }
-                            else
+                            catch (Exception ex)
                             {
-                                Console.WriteLine("RabbitMQ no está disponible. No se intentará republicar.");
-                                producer.IncrementConnectionFailureCount(); // Incrementar el contador de fallos de conexión
+                                Console.WriteLine($"Error al republicar en RabbitMQ: {ex.Message}");
                             }
                         }
                         else
                         {
-                            Console.WriteLine("No se encontró un productor de RabbitMQ en el contexto.");
+                            Console.WriteLine("RabbitMQ no está disponible. No se intentará republicar.");
+                            producer.IncrementConnectionFailureCount(); // Incrementar el contador de fallos de conexión
                         }
                     }
-                    else
-                    {
-                        Console.WriteLine("Se superó el límite de intentos para republicar en RabbitMQ.");
-                    }
-
-                    // Opcionalmente, actualizar métricas en un sistema de monitoreo
-                    // Opcionalmente, enviar una alerta si retryCount supera un umbral
                 });
     }
 }
