@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  inventory-api:
+    build:
+      context: ./src
+      dockerfile: InventorySystem.API/Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DEFAULT_CONNECTION=Server=sqlserver;Database=InventoryDB;User Id=sa;Password=SariIndi3762;TrustServerCertificate=True;
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+      - sqlserver
+    networks:
+      - inventory-network
+
+  inventory-consumer:
+    build:
+      context: ./src
+      dockerfile: InventarySystem.Consumer/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DEFAULT_CONNECTION=Server=sqlserver;Database=InventoryDB;User Id=sa;Password=SariIndi3762;TrustServerCertificate=True;
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    networks:
+      - inventory-network
+    entrypoint: ["/bin/sh", "-c", "while ! nc -z rabbitmq 5672; do sleep 1; done; dotnet InventorySystem.Consumer.dll"]
+
+  rabbitmq:
+    image: rabbitmq:management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - inventory-network
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      SA_PASSWORD: "SariIndi3762"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+    networks:
+      - inventory-network
+
+networks:
+  inventory-network:
+    driver: bridge
