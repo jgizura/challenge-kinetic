@@ -34,39 +34,5 @@ namespace InventorySystem.Application.Features.ResiliencePolicies
                 {
                     _logger.LogWarning("El disyuntor está medio abierto. Probando la salud del sistema.");
                 });
-
-        public static readonly AsyncRetryPolicy RetryPolicy = Policy
-            .Handle<Exception>()
-            .WaitAndRetryAsync(
-                retryCount: 3,
-                sleepDurationProvider: attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)),
-                onRetry: async (exception, timeSpan, retryAttempt, context) =>
-                {
-                    Console.WriteLine($"Reintento {retryAttempt} después de {timeSpan.TotalSeconds} segundos debido a: {exception.Message}");
-
-                    if (retryAttempt < 3 && context.TryGetValue("RabbitMQProducer", out var producerObj) && producerObj is IRabbitMQProducer producer)
-                    {
-                        if (producer.IsConnectionOpen()) // Verificar si RabbitMQ está disponible
-                        {
-                            try
-                            {
-                                // Reintentar publicar el mensaje en RabbitMQ
-                                var message = context["Message"];
-                                var routingKey = context["RoutingKey"].ToString();
-                                await producer.PublishAsync(message, routingKey);
-                                Console.WriteLine("Mensaje republicado exitosamente en RabbitMQ.");
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"Error al republicar en RabbitMQ: {ex.Message}");
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine("RabbitMQ no está disponible. No se intentará republicar.");
-                            producer.IncrementConnectionFailureCount(); // Incrementar el contador de fallos de conexión
-                        }
-                    }
-                });
     }
 }

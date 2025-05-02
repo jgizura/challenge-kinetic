@@ -78,13 +78,13 @@ namespace InventorySystem.API.Controllers
         /// <response code="400">If the ID in the URL doesn't match the body or data is invalid</response>
         /// <response code="404">If the product is not found</response>
         [HttpPut("{id}")]
+        [ProducesResponseType(StatusCodes.Status201Created, Type = typeof(ProductDto))]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<ActionResult> UpdateProduct([Required] long id, [Required] CreateProductDto updateProductDto)
+        public async Task<ActionResult<ProductDto>> UpdateProduct([Required] long id, [Required] CreateProductDto updateProductDto)
         {
-            await _productService.UpdateAsync(id, updateProductDto);
-            return NoContent();
+            return await _productService.UpdateAsync(id, updateProductDto);
         }
 
         /// <summary>

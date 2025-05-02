@@ -6,9 +6,9 @@ using FluentValidation;
 using InventorySystem.Application.DTOs;
 using InventorySystem.Application.Features.Products.Interfaces;
 using InventorySystem.Application.Features.RabbitMQProducer.Interfaces;
-using InventorySystem.Application.Features.ResiliencePolicies;
 using InventorySystem.Domain.Entities;
-using InventorySystem.Domain.Interfaces; 
+using InventorySystem.Domain.Interfaces;
+
 
 namespace InventorySystem.Application.Features.Products
 {
@@ -58,7 +58,7 @@ namespace InventorySystem.Application.Features.Products
             }
 
             await _productRepository.CreateAsync(product);
-            await ResiliencePolicies.ResiliencePolicies.RetryPolicy.ExecuteAsync(async () =>
+            await ResiliencePolicies.ResiliencePolicies.CircuitBreakerPolicy.ExecuteAsync(async () =>
             {
                 await _messageProducer.PublishAsync(product, CREATE_ROUTING_KEY);
             });
@@ -85,7 +85,7 @@ namespace InventorySystem.Application.Features.Products
             }
 
             await _productRepository.UpdateAsync(product);
-            await ResiliencePolicies.ResiliencePolicies.RetryPolicy.ExecuteAsync(async () =>
+            await ResiliencePolicies.ResiliencePolicies.CircuitBreakerPolicy.ExecuteAsync(async () =>
             {
                 await _messageProducer.PublishAsync(product, UPDATE_ROUTING_KEY);
             });
@@ -110,7 +110,7 @@ namespace InventorySystem.Application.Features.Products
             product.DeletedDate = DateTime.UtcNow;
 
             await _productRepository.UpdateAsync(product);
-            await ResiliencePolicies.ResiliencePolicies.RetryPolicy.ExecuteAsync(async () =>
+            await ResiliencePolicies.ResiliencePolicies.CircuitBreakerPolicy.ExecuteAsync(async () =>
             {
                 await _messageProducer.PublishAsync(product, DELETE_ROUTING_KEY);
             });
