@@ -17,24 +17,14 @@ namespace InventorySystem.Application.Features.RabbitMQProducer
         private IChannel _channel;
         private readonly ILogger<RabbitMQProducer> _logger;
 
-        private static readonly List<string> QUEUES = new List<string> { "inventory.create", "inventory.update", "inventory.delete" };
-
-        private int _connectionFailureCount = 0;
-
-        public int ConnectionFailureCount => _connectionFailureCount;
+        private static readonly List<string> QUEUES = new List<string> { "inventory.create", "inventory.update", "inventory.delete" }; 
 
         public RabbitMQProducer(string hostName, ILogger<RabbitMQProducer> logger)
         {
             _hostName = hostName;
             _logger = logger;
             InitializeConnectionAsync().GetAwaiter().GetResult();
-        }
-
-        public void IncrementConnectionFailureCount()
-        {
-            _connectionFailureCount++;
-            _logger.LogWarning("Failed to connect to RabbitMQ. Attempt count: {FailureCount}", _connectionFailureCount);
-        }
+        } 
 
         private async Task InitializeConnectionAsync()
         {
@@ -62,12 +52,9 @@ namespace InventorySystem.Application.Features.RabbitMQProducer
                     var routingKey = queue.Split('.')[1];
                     await _channel.QueueBindAsync(queue, _exchangeName, routingKey);
                 }
-
-                _connectionFailureCount = 0;
             }
             catch (Exception ex)
             {
-                IncrementConnectionFailureCount();
                 _logger.LogError(ex, "Failed to initialize RabbitMQ connection");
                 throw;
             }
